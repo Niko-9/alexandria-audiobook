@@ -699,6 +699,8 @@
                             <td class="text-center align-top"><button class="btn btn-danger btn-sm w-100" id="btn-cancel-render" onclick="cancelRender()" style="display:none;"><i class="fas fa-stop me-1"></i>Cancel</button></td>
                             <td class="align-middle text-muted px-1">|</td>
                             <td class="text-center align-top" style="min-width:100px;"><button class="btn btn-warning btn-sm w-100" id="btn-merge"><i class="fas fa-file-audio me-1"></i>Merge All</button></td>
+                            <td class="align-middle text-muted px-1">|</td>
+                            <td class="text-center align-top" style="min-width:100px;"><button class="btn btn-outline-danger btn-sm w-100" id="btn-clear-all" onclick="clearAllChunks()"><i class="fas fa-trash me-1"></i>Clear All</button></td>
                         </tr>
                         <tr>
                             <td class="text-center text-muted" style="font-size:0.7rem;">Preview generated audio</td>
@@ -709,6 +711,8 @@
                             <td></td>
                             <td></td>
                             <td class="text-center text-muted" style="font-size:0.7rem;">Combine all chunks into final audiobook</td>
+                            <td></td>
+                            <td class="text-center text-muted" style="font-size:0.7rem;">Remove all entries</td>
                         </tr>
                      </table>
                 </div>
@@ -1733,6 +1737,42 @@
                 await loadChunks(true);
             } catch (e) {
                 showToast('Undo failed: ' + e.message, 'error');
+            }
+        };
+
+        window.clearAllChunks = async () => {
+            if (!confirm('Are you sure you want to delete ALL entries? This cannot be undone!')) {
+                return;
+            }
+
+            try {
+                const chunks = await API.get('/api/chunks');
+                if (!chunks || chunks.length === 0) {
+                    showToast('No entries to delete', 'info');
+                    return;
+                }
+
+                // Delete all chunks except the last one (API prevents deleting last chunk)
+                // So we'll delete from end to beginning until only one remains
+                let deleteCount = 0;
+                for (let i = chunks.length - 1; i > 0; i--) {
+                    try {
+                        await fetch(`/api/chunks/${i}`, { method: 'DELETE' });
+                        deleteCount++;
+                    } catch (e) {
+                        console.error(`Failed to delete chunk ${i}:`, e);
+                    }
+                }
+
+                // Clear the last remaining chunk's text
+                if (chunks.length > 0) {
+                    await API.post('/api/chunks/0', { text: '', instruct: '', speaker: 'NARRATOR' });
+                }
+
+                showToast(`Cleared ${deleteCount + 1} entries`, 'success');
+                await loadChunks(true);
+            } catch (e) {
+                showToast('Failed to clear entries: ' + e.message, 'error');
             }
         };
 
