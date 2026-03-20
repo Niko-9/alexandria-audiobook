@@ -20,14 +20,14 @@ def sanitize_filename(name):
 def combine_audio_with_pauses(audio_segments, speakers, pause_ms=DEFAULT_PAUSE_MS, same_speaker_pause_ms=SAME_SPEAKER_PAUSE_MS):
     """Combine audio segments with pauses between them.
 
-    Applies normalization, sample rate consistency, and crossfades for high-quality output.
+    Applies normalization, sample rate consistency, and fade in/out for high-quality output.
     """
     if not audio_segments:
         return None
 
     # Target sample rate (most common for TTS output)
     TARGET_SAMPLE_RATE = 24000
-    CROSSFADE_MS = 10  # Short crossfade to eliminate clicks/pops
+    FADE_MS = 5  # Very short fade to eliminate clicks without affecting speech
 
     # Normalize and ensure consistent sample rate for all segments
     normalized_segments = []
@@ -36,11 +36,18 @@ def combine_audio_with_pauses(audio_segments, speakers, pause_ms=DEFAULT_PAUSE_M
         if segment.frame_rate != TARGET_SAMPLE_RATE:
             segment = segment.set_frame_rate(TARGET_SAMPLE_RATE)
 
+        # Ensure channel consistency - convert all to mono
+        if segment.channels != 1:
+            segment = segment.set_channels(1)
+
         # Normalize to -20 dBFS to prevent clipping when combining
-        # Use match_target_amplitude instead of normalize for better control
         target_dBFS = -20.0
         change_in_dBFS = target_dBFS - segment.dBFS
         normalized = segment.apply_gain(change_in_dBFS)
+
+        # Apply very short fade in/out to prevent clicks at boundaries
+        if len(normalized) > FADE_MS * 2:
+            normalized = normalized.fade_in(FADE_MS).fade_out(FADE_MS)
 
         normalized_segments.append(normalized)
 
@@ -49,6 +56,7 @@ def combine_audio_with_pauses(audio_segments, speakers, pause_ms=DEFAULT_PAUSE_M
     silence_between_speakers = AudioSegment.silent(duration=pause_ms, frame_rate=TARGET_SAMPLE_RATE)
     silence_same_speaker = AudioSegment.silent(duration=same_speaker_pause_ms, frame_rate=TARGET_SAMPLE_RATE)
 
+    # Simple concatenation - no crossfade which can cause artifacts
     combined = audio_segments[0]
     prev_speaker = speakers[0]
 
@@ -59,14 +67,8 @@ def combine_audio_with_pauses(audio_segments, speakers, pause_ms=DEFAULT_PAUSE_M
         else:
             pause = silence_between_speakers
 
-        # Apply short crossfade at segment boundaries to eliminate clicks/pops
-        # Only crossfade if we have enough audio (pause + segment)
-        if len(pause) + len(segment) > CROSSFADE_MS * 2:
-            combined = combined.append(pause, crossfade=CROSSFADE_MS)
-            combined = combined.append(segment, crossfade=CROSSFADE_MS)
-        else:
-            # Fallback for very short segments
-            combined += pause + segment
+        # Simple concatenation with silence in between
+        combined = combined + pause + segment
 
         prev_speaker = speaker
 
