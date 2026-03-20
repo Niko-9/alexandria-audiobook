@@ -1632,21 +1632,27 @@
                     }
                 }
 
-                // Update audio player when status is done - always refresh src to bust cache
+                // Update audio player when status is done
                 if (chunk.status === 'done' && chunk.audio_path) {
                     const existingAudio = actionContainer.querySelector('audio');
                     const existingNoAudio = actionContainer.querySelector('.text-muted');
                     const newSrc = `/${chunk.audio_path}?t=${Date.now()}`;
 
                     if (existingNoAudio) {
-                        // No audio element yet, create one
+                        // No audio element yet — create one (chunk just finished generating)
                         const audioHtml = `<audio class="chunk-audio" data-id="${chunk.id}" controls src="${newSrc}" style="width: 200px; height: 30px;" onplay="stopOthers(${chunk.id})"></audio>`;
                         existingNoAudio.outerHTML = audioHtml;
                     } else if (existingAudio) {
-                        // Audio exists - just update the src with new cache-busting timestamp
-                        // This forces browser to fetch the regenerated file
-                        existingAudio.src = newSrc;
-                        existingAudio.load(); // Force reload
+                        // Audio element exists — only reload if the file path changed
+                        // (i.e. this chunk was regenerated) AND it is not currently playing
+                        const currentPath = new URL(existingAudio.src, location.href).pathname;
+                        const newPath = `/${chunk.audio_path}`;
+                        if (currentPath !== newPath) {
+                            // File was replaced — reload regardless of play state so new audio is heard
+                            existingAudio.src = newSrc;
+                            if (existingAudio.paused) existingAudio.load();
+                        }
+                        // Same path → leave the element (and any ongoing playback) untouched
                     }
                 }
             }
@@ -1682,8 +1688,13 @@
 
                 // Skip redraw if playing audio (unless forced)
                 if (!forceFullRedraw && (isPlayingSequence || isAudioPlaying())) {
-                    // Only update status badges and progress indicators
-                    chunks.forEach(chunk => updateChunkRow(chunk));
+                    // Only update rows that actually changed — avoids reloading audio elements
+                    chunks.forEach((chunk, i) => {
+                        const cached = cachedChunks[i];
+                        if (!cached || cached.status !== chunk.status || cached.audio_path !== chunk.audio_path) {
+                            updateChunkRow(chunk);
+                        }
+                    });
                     cachedChunks = chunks;
 
                     // Continue polling if generating
