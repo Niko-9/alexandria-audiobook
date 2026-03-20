@@ -17,7 +17,7 @@ def sanitize_filename(name):
     return name.lower()
 
 
-def combine_audio_with_pauses(audio_segments, speakers, pause_ms=DEFAULT_PAUSE_MS, same_speaker_pause_ms=SAME_SPEAKER_PAUSE_MS):
+def combine_audio_with_pauses(audio_segments, speakers, pause_ms=DEFAULT_PAUSE_MS, same_speaker_pause_ms=SAME_SPEAKER_PAUSE_MS, target_dbfs=-20.0, fade_ms=5):
     """Combine audio segments with pauses between them.
 
     Applies normalization, sample rate consistency, and fade in/out for high-quality output.
@@ -27,7 +27,7 @@ def combine_audio_with_pauses(audio_segments, speakers, pause_ms=DEFAULT_PAUSE_M
 
     # Target sample rate (most common for TTS output)
     TARGET_SAMPLE_RATE = 24000
-    FADE_MS = 5  # Very short fade to eliminate clicks without affecting speech
+    FADE_MS = fade_ms
 
     # Normalize and ensure consistent sample rate for all segments
     normalized_segments = []
@@ -40,9 +40,8 @@ def combine_audio_with_pauses(audio_segments, speakers, pause_ms=DEFAULT_PAUSE_M
         if segment.channels != 1:
             segment = segment.set_channels(1)
 
-        # Normalize to -20 dBFS to prevent clipping when combining
-        target_dBFS = -20.0
-        change_in_dBFS = target_dBFS - segment.dBFS
+        # Normalize to target dBFS to prevent clipping when combining
+        change_in_dBFS = target_dbfs - segment.dBFS
         normalized = segment.apply_gain(change_in_dBFS)
 
         # Apply very short fade in/out to prevent clicks at boundaries

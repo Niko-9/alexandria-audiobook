@@ -118,7 +118,7 @@ class ProjectManager:
             print(f"Failed to initialize TTS engine: {e}")
             return None
 
-    def load_chunks(self):
+    def load_chunks(self, max_chunk_chars=None):
         if os.path.exists(self.chunks_path):
             try:
                 with open(self.chunks_path, "r", encoding="utf-8") as f:
@@ -131,7 +131,7 @@ class ProjectManager:
         if os.path.exists(self.script_path):
             with open(self.script_path, "r", encoding="utf-8") as f:
                 script = json.load(f)
-            chunks = group_into_chunks(script)
+            chunks = group_into_chunks(script, max_chars=max_chunk_chars or MAX_CHUNK_CHARS)
 
             # Initialize chunk status
             for i, chunk in enumerate(chunks):
@@ -271,7 +271,7 @@ class ProjectManager:
             return chunk
         return None
 
-    def generate_chunk_audio(self, index):
+    def generate_chunk_audio(self, index, mp3_bitrate="192k"):
         chunks = self.load_chunks()
         if not (0 <= index < len(chunks)):
             return False, "Invalid chunk index"
@@ -325,7 +325,7 @@ class ProjectManager:
                     mp3_filepath = os.path.join(self.voicelines_dir, mp3_filename)
 
                     # Export with high-quality MP3 settings
-                    segment.export(mp3_filepath, format="mp3", bitrate="192k", parameters=["-q:a", "0"])
+                    segment.export(mp3_filepath, format="mp3", bitrate=mp3_bitrate, parameters=["-q:a", "0"])
 
                     # Validate: conda ffmpeg often lacks libmp3lame, producing
                     # a tiny (~428 byte) header-only file without raising an error
@@ -373,7 +373,8 @@ class ProjectManager:
                 print(f"Warning: Failed to update chunk {index} status to error: {update_err}")
             return False, str(e)
 
-    def merge_audio(self):
+    def merge_audio(self, merge_config=None):
+        merge_config = merge_config or {}
         chunks = self.load_chunks()
         audio_segments = []
         speakers = []
@@ -395,22 +396,33 @@ class ProjectManager:
             return False, "No audio segments found"
 
         # Combine with high-quality processing (normalization, crossfades, etc.)
-        final_audio = combine_audio_with_pauses(audio_segments, speakers)
+        final_audio = combine_audio_with_pauses(
+            audio_segments, speakers,
+            pause_ms=merge_config.get("pause_between_speakers", DEFAULT_PAUSE_MS),
+            same_speaker_pause_ms=merge_config.get("same_speaker_pause", SAME_SPEAKER_PAUSE_MS),
+            target_dbfs=merge_config.get("normalization_db", -20.0),
+            fade_ms=merge_config.get("fade_ms", 5),
+        )
         output_filename = "cloned_audiobook.mp3"
         output_path = os.path.join(self.root_dir, output_filename)
 
-        # Export with high-quality MP3 settings
-        final_audio.export(output_path, format="mp3", bitrate="192k", parameters=["-q:a", "0"])
+        mp3_bitrate = merge_config.get("mp3_bitrate", "192k")
+        final_audio.export(output_path, format="mp3", bitrate=mp3_bitrate, parameters=["-q:a", "0"])
 
         return True, output_filename
 
-    def export_audacity(self):
+    def export_audacity(self, merge_config=None):
         """Export project as an Audacity-compatible zip with per-speaker WAV tracks,
         a LOF file for auto-import, and a labels file for chunk annotations."""
+        merge_config = merge_config or {}
         chunks = self.load_chunks()
 
         # Target sample rate for consistent output
         TARGET_SAMPLE_RATE = 24000
+
+        pause_between = merge_config.get("pause_between_speakers", DEFAULT_PAUSE_MS)
+        same_pause = merge_config.get("same_speaker_pause", SAME_SPEAKER_PAUSE_MS)
+        target_dBFS = merge_config.get("normalization_db", -20.0)
 
         # Phase 1 — Compute timeline (matching merge_audio pause logic exactly)
         timeline = []  # list of (chunk, segment, abs_start_ms)
@@ -431,8 +443,7 @@ class ProjectManager:
                 if segment.frame_rate != TARGET_SAMPLE_RATE:
                     segment = segment.set_frame_rate(TARGET_SAMPLE_RATE)
 
-                # Normalize volume to -20 dBFS
-                target_dBFS = -20.0
+                # Normalize volume to target dBFS
                 change_in_dBFS = target_dBFS - segment.dBFS
                 segment = segment.apply_gain(change_in_dBFS)
 
@@ -443,9 +454,9 @@ class ProjectManager:
             speaker = chunk["speaker"]
             if prev_speaker is not None:
                 if speaker == prev_speaker:
-                    cursor_ms += SAME_SPEAKER_PAUSE_MS
+                    cursor_ms += same_pause
                 else:
-                    cursor_ms += DEFAULT_PAUSE_MS
+                    cursor_ms += pause_between
 
             timeline.append((chunk, segment, cursor_ms))
             cursor_ms += len(segment)
@@ -516,7 +527,7 @@ class ProjectManager:
 
         return True, zip_path
 
-    def merge_m4b(self, per_chunk_chapters=False, metadata=None):
+    def merge_m4b(self, per_chunk_chapters=False, metadata=None, merge_config=None):
         """Merge audio chunks into an M4B audiobook with chapter markers.
 
         Args:
@@ -524,12 +535,17 @@ class ProjectManager:
                 detect chapter headings and group chunks into sections.
             metadata: Optional dict with keys: title, author, narrator, year,
                 description, cover_path (absolute path to cover image).
+            merge_config: Optional dict with audio merge settings.
 
         Returns:
             tuple: (success: bool, message: str)
         """
         metadata = metadata or {}
+        merge_config = merge_config or {}
         chunks = self.load_chunks()
+
+        pause_between = merge_config.get("pause_between_speakers", DEFAULT_PAUSE_MS)
+        same_pause = merge_config.get("same_speaker_pause", SAME_SPEAKER_PAUSE_MS)
 
         # Phase 1 — Compute timeline (same logic as export_audacity)
         timeline = []  # list of (chunk, segment, abs_start_ms)
@@ -552,9 +568,9 @@ class ProjectManager:
             speaker = chunk["speaker"]
             if prev_speaker is not None:
                 if speaker == prev_speaker:
-                    cursor_ms += SAME_SPEAKER_PAUSE_MS
+                    cursor_ms += same_pause
                 else:
-                    cursor_ms += DEFAULT_PAUSE_MS
+                    cursor_ms += pause_between
 
             timeline.append((chunk, segment, cursor_ms))
             cursor_ms += len(segment)
@@ -570,7 +586,13 @@ class ProjectManager:
         # Phase 3 — Combine audio and export to temp WAV
         audio_segments = [seg for _, seg, _ in timeline]
         speakers = [chunk["speaker"] for chunk, _, _ in timeline]
-        final_audio = combine_audio_with_pauses(audio_segments, speakers)
+        final_audio = combine_audio_with_pauses(
+            audio_segments, speakers,
+            pause_ms=pause_between,
+            same_speaker_pause_ms=same_pause,
+            target_dbfs=merge_config.get("normalization_db", -20.0),
+            fade_ms=merge_config.get("fade_ms", 5),
+        )
 
         temp_wav = os.path.join(self.root_dir, "temp_m4b_combined.wav")
         meta_path = os.path.join(self.root_dir, "temp_m4b_meta.txt")
@@ -615,7 +637,7 @@ class ProjectManager:
                 cmd += ["-map", "1:v", "-c:v", "copy", "-disposition:v:0", "attached_pic"]
             cmd += [
                 "-c:a", "aac",
-                "-b:a", "192k",  # Higher bitrate for better quality
+                "-b:a", merge_config.get("m4b_bitrate", "192k"),
                 "-ar", "24000",  # Match sample rate from combine_audio_with_pauses
                 "-movflags", "+faststart",
                 output_path
@@ -712,7 +734,7 @@ class ProjectManager:
         return chapters
 
     def generate_chunks_parallel(self, indices, max_workers=2, progress_callback=None,
-                                  cancel_check=None):
+                                  cancel_check=None, mp3_bitrate="192k"):
         """Generate multiple chunks in parallel using ThreadPoolExecutor.
 
         Uses individual TTS API calls with per-speaker voice settings.
@@ -744,7 +766,7 @@ class ProjectManager:
 
         with ThreadPoolExecutor(max_workers=max_workers) as executor:
             futures = {
-                executor.submit(self.generate_chunk_audio, idx): idx
+                executor.submit(self.generate_chunk_audio, idx, mp3_bitrate=mp3_bitrate): idx
                 for idx in indices
             }
 
@@ -830,7 +852,7 @@ class ProjectManager:
         return reordered
 
     def generate_chunks_batch(self, indices, batch_seed=-1, batch_size=4, progress_callback=None,
-                               batch_group_by_type=False, cancel_check=None):
+                               batch_group_by_type=False, cancel_check=None, mp3_bitrate="192k"):
         """Generate multiple chunks using batch TTS API with a single seed.
 
         Args:
@@ -943,7 +965,7 @@ class ProjectManager:
 
                         mp3_filename = f"{filename_base}.mp3"
                         mp3_filepath = os.path.join(self.voicelines_dir, mp3_filename)
-                        segment.export(mp3_filepath, format="mp3", bitrate="192k", parameters=["-q:a", "0"])
+                        segment.export(mp3_filepath, format="mp3", bitrate=mp3_bitrate, parameters=["-q:a", "0"])
 
                         # Validate: conda ffmpeg often lacks libmp3lame, producing
                         # a tiny (~428 byte) header-only file without raising an error

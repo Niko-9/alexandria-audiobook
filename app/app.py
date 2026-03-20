@@ -145,11 +145,21 @@ class PromptConfig(BaseModel):
     review_system_prompt: Optional[str] = None
     review_user_prompt: Optional[str] = None
 
+class MergeConfig(BaseModel):
+    pause_between_speakers: int = 500  # ms silence between different speakers
+    same_speaker_pause: int = 250  # ms silence when same speaker continues
+    normalization_db: float = -20.0  # target dBFS for volume normalization
+    fade_ms: int = 5  # fade in/out duration to eliminate clicks
+    mp3_bitrate: str = "192k"  # MP3 export bitrate
+    m4b_bitrate: str = "192k"  # M4B/AAC export bitrate
+    max_chunk_chars: int = 500  # max characters per voice chunk
+
 class AppConfig(BaseModel):
     llm: LLMConfig
     tts: TTSConfig
     prompts: Optional[PromptConfig] = None
     generation: Optional[GenerationConfig] = None
+    merge: Optional[MergeConfig] = None
 
 class VoiceConfigItem(BaseModel):
     type: str = "custom"
@@ -402,6 +412,18 @@ async def get_default_prompts():
         pass
     return result
 
+def _load_merge_config():
+    """Load merge config from saved config.json, returning dict with defaults."""
+    defaults = MergeConfig()
+    if os.path.exists(CONFIG_PATH):
+        try:
+            with open(CONFIG_PATH, "r", encoding="utf-8") as f:
+                cfg = json.load(f)
+            return cfg.get("merge") or defaults.model_dump()
+        except (json.JSONDecodeError, ValueError):
+            pass
+    return defaults.model_dump()
+
 @app.post("/api/config")
 async def save_config(config: AppConfig):
     with open(CONFIG_PATH, "w", encoding="utf-8") as f:
@@ -557,7 +579,8 @@ async def get_audiobook():
 
 @app.get("/api/chunks")
 async def get_chunks():
-    chunks = project_manager.load_chunks()
+    mc = _load_merge_config()
+    chunks = project_manager.load_chunks(max_chunk_chars=mc.get("max_chunk_chars"))
     return chunks
 
 class ChunkRestoreRequest(BaseModel):
@@ -608,7 +631,8 @@ async def generate_chunk_endpoint(index: int, background_tasks: BackgroundTasks)
         raise HTTPException(status_code=400, detail="Cannot generate audio for an empty line")
 
     def task():
-        project_manager.generate_chunk_audio(index)
+        mc = _load_merge_config()
+        project_manager.generate_chunk_audio(index, mp3_bitrate=mc.get("mp3_bitrate", "192k"))
 
     background_tasks.add_task(task)
     return {"status": "started"}
@@ -623,7 +647,8 @@ async def merge_audio_endpoint(background_tasks: BackgroundTasks):
         process_state["audio"]["running"] = True
         process_state["audio"]["logs"] = ["Starting merge..."]
         try:
-            success, msg = project_manager.merge_audio()
+            mc = _load_merge_config()
+            success, msg = project_manager.merge_audio(merge_config=mc)
             if success:
                 process_state["audio"]["logs"].append(f"Merge complete: {msg}")
             else:
@@ -645,7 +670,8 @@ async def export_audacity_endpoint(background_tasks: BackgroundTasks):
         process_state["audacity_export"]["running"] = True
         process_state["audacity_export"]["logs"] = ["Starting Audacity export..."]
         try:
-            success, msg = project_manager.export_audacity()
+            mc = _load_merge_config()
+            success, msg = project_manager.export_audacity(merge_config=mc)
             if success:
                 process_state["audacity_export"]["logs"].append(f"Export complete: {msg}")
             else:
@@ -690,7 +716,8 @@ async def merge_m4b_endpoint(request: M4bExportRequest, background_tasks: Backgr
                 "description": request.description,
                 "cover_path": os.path.join(ROOT_DIR, "m4b_cover.jpg") if os.path.exists(os.path.join(ROOT_DIR, "m4b_cover.jpg")) else "",
             }
-            success, msg = project_manager.merge_m4b(per_chunk_chapters=request.per_chunk_chapters, metadata=meta)
+            mc = _load_merge_config()
+            success, msg = project_manager.merge_m4b(per_chunk_chapters=request.per_chunk_chapters, metadata=meta, merge_config=mc)
             if success:
                 process_state["m4b_export"]["logs"].append(f"Export complete: {msg}")
             else:
@@ -763,8 +790,10 @@ async def generate_batch_endpoint(request: BatchGenerateRequest, background_task
             f"Starting parallel generation of {total} chunks with {workers} workers..."
         ]
         try:
+            mc = _load_merge_config()
             results = project_manager.generate_chunks_parallel(
-                indices, workers, progress_callback, cancel_check=cancel_check
+                indices, workers, progress_callback, cancel_check=cancel_check,
+                mp3_bitrate=mc.get("mp3_bitrate", "192k"),
             )
             completed = len(results["completed"])
             failed = len(results["failed"])
@@ -828,10 +857,12 @@ async def generate_batch_fast_endpoint(request: BatchGenerateRequest, background
             f"Starting batch generation of {total} chunks (batch_size={batch_size}, seed={batch_seed})..."
         ]
         try:
+            mc = _load_merge_config()
             results = project_manager.generate_chunks_batch(
                 indices, batch_seed, batch_size, progress_callback,
                 batch_group_by_type=batch_group_by_type,
                 cancel_check=cancel_check,
+                mp3_bitrate=mc.get("mp3_bitrate", "192k"),
             )
             completed = len(results["completed"])
             failed = len(results["failed"])
