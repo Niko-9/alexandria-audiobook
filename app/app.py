@@ -127,6 +127,12 @@ class TTSConfig(BaseModel):
     sub_batch_ratio: float = 5.0  # max longest/shortest length ratio before splitting
     sub_batch_max_items: int = 0  # hard cap on sequences per sub-batch (0 = auto from VRAM estimate)
     batch_group_by_type: bool = False  # group chunks by voice type for efficient batching
+    # TTS generation sampling parameters (passed to Qwen3-TTS model)
+    tts_temperature: float = 1.0  # sampling temperature for audio token generation
+    tts_top_p: float = 0.95  # nucleus sampling threshold for audio tokens
+    tts_top_k: int = 50  # top-k filtering for audio tokens (0 = disabled)
+    tts_repetition_penalty: float = 1.0  # penalize repeated audio tokens (1.0 = no penalty)
+    tts_max_new_tokens: int = 2048  # max audio tokens to generate (12Hz -> ~170s max)
 
 class GenerationConfig(BaseModel):
     chunk_size: int = 3000
