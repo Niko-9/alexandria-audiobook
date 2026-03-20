@@ -48,6 +48,8 @@
         .chunk-row.expanded .chunk-expand-btn {
             transform: rotate(180deg);
         }
+        /* Stopped status badge - orange */
+        .badge.bg-stopped { background-color: #fd7e14 !important; color: #fff; }
         /* Core pipeline tabs - green */
         .nav-link.nav-pipeline { color: rgba(125, 227, 161, 0.7); }
         .nav-link.nav-pipeline:hover { color: #7de3a1; }
@@ -1603,6 +1605,7 @@
 
             const statusColor = chunk.status === 'done' ? 'success' :
                               chunk.status === 'generating' ? 'warning' :
+                              chunk.status === 'stopped' ? 'stopped' :
                               chunk.status === 'error' ? 'danger' : 'secondary';
 
             // Update status badge
@@ -1727,6 +1730,7 @@
                     tbody.innerHTML = chunks.map(chunk => {
                         const statusColor = chunk.status === 'done' ? 'success' :
                                           chunk.status === 'generating' ? 'warning' :
+                                          chunk.status === 'stopped' ? 'stopped' :
                                           chunk.status === 'error' ? 'danger' : 'secondary';
 
                         const audioPlayer = chunk.audio_path ?
@@ -2127,6 +2131,12 @@
             if (!skipApi) {
                 try {
                     await API.post('/api/cancel_audio', {});
+                    // Wait for backend task to finish cleanup (sets generating→stopped)
+                    for (let i = 0; i < 20; i++) {
+                        const s = await API.get('/api/status/audio');
+                        if (!s.running) break;
+                        await new Promise(r => setTimeout(r, 500));
+                    }
                     await loadChunks(false);
                 } catch (e) { console.error('Cancel error:', e); }
             }

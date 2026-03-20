@@ -794,14 +794,14 @@ class ProjectManager:
                 if progress_callback:
                     progress_callback(len(results["completed"]), len(results["failed"]), total)
 
-            # Reset remaining "generating" chunks to "pending"
+            # Reset remaining "generating" chunks to "stopped"
             if cancelled:
                 done_indices = set(results["completed"]) | {idx for idx, _ in results["failed"]}
                 chunks = self.load_chunks()
                 if chunks:
                     for idx in indices:
                         if idx not in done_indices and 0 <= idx < len(chunks) and chunks[idx].get("status") == "generating":
-                            chunks[idx]["status"] = "pending"
+                            chunks[idx]["status"] = "stopped"
                             results["cancelled"] += 1
                     self.save_chunks(chunks)
 
@@ -1015,13 +1015,13 @@ class ProjectManager:
             if progress_callback:
                 progress_callback(len(results["completed"]), len(results["failed"]), total)
 
-        # Reset remaining "generating" chunks to "pending" on cancel or completion
+        # Reset remaining "generating" chunks to "stopped" on cancel
         done_indices = set(results["completed"]) | {idx for idx, _ in results["failed"]}
         chunks = self.load_chunks()
         if chunks:
             for idx in indices:
                 if idx not in done_indices and 0 <= idx < len(chunks) and chunks[idx].get("status") == "generating":
-                    chunks[idx]["status"] = "pending"
+                    chunks[idx]["status"] = "stopped"
                     results["cancelled"] += 1
             if results["cancelled"]:
                 self.save_chunks(chunks)

@@ -540,7 +540,8 @@ async def get_annotated_script():
 async def get_status(task_name: str):
     if task_name not in process_state:
         raise HTTPException(status_code=404, detail="Task not found")
-    return process_state[task_name]
+    # Exclude non-serializable fields (e.g. subprocess handle stored as "process")
+    return {k: v for k, v in process_state[task_name].items() if k != "process"}
 
 @app.get("/api/voices")
 async def get_voices():
@@ -979,7 +980,7 @@ async def cancel_audio():
         reset_count = 0
         for chunk in chunks:
             if chunk.get("status") == "generating":
-                chunk["status"] = "pending"
+                chunk["status"] = "stopped"
                 reset_count += 1
         if reset_count:
             project_manager.save_chunks(chunks)
