@@ -160,6 +160,33 @@
                                 <div class="form-text">Seed for reproducibility</div>
                             </div>
                         </div>
+                        <div class="row mb-3">
+                            <div class="col-md-2">
+                                <label class="form-label">TTS Temperature</label>
+                                <input type="number" class="form-control" id="tts-temperature" value="1.0" min="0" max="2" step="0.05">
+                                <div class="form-text">Audio sampling randomness (lower = more stable voice)</div>
+                            </div>
+                            <div class="col-md-2">
+                                <label class="form-label">TTS Top P</label>
+                                <input type="number" class="form-control" id="tts-top-p" value="0.95" min="0" max="1" step="0.01">
+                                <div class="form-text">Nucleus sampling for audio tokens</div>
+                            </div>
+                            <div class="col-md-2">
+                                <label class="form-label">TTS Top K</label>
+                                <input type="number" class="form-control" id="tts-top-k" value="50" min="0" max="500" step="1">
+                                <div class="form-text">Top-K filtering (0 = disabled)</div>
+                            </div>
+                            <div class="col-md-2">
+                                <label class="form-label">Repetition Penalty</label>
+                                <input type="number" class="form-control" id="tts-repetition-penalty" value="1.0" min="1.0" max="2.0" step="0.05">
+                                <div class="form-text">Penalize repeated audio patterns (1.0 = off)</div>
+                            </div>
+                            <div class="col-md-2">
+                                <label class="form-label">Max Audio Tokens</label>
+                                <input type="number" class="form-control" id="tts-max-new-tokens" value="2048" min="256" max="8192" step="256">
+                                <div class="form-text">Max tokens per chunk (~12 tokens/sec)</div>
+                            </div>
+                        </div>
                         <div class="row mb-3" id="tts-local-options" style="display:none;">
                             <div class="col-md-2">
                                 <div class="form-check form-switch mt-4">
@@ -1065,6 +1092,22 @@
                 if (config.tts.sub_batch_max_items != null) {
                     document.getElementById('sub-batch-max-items').value = config.tts.sub_batch_max_items;
                 }
+                // TTS generation sampling parameters
+                if (config.tts.tts_temperature != null) {
+                    document.getElementById('tts-temperature').value = config.tts.tts_temperature;
+                }
+                if (config.tts.tts_top_p != null) {
+                    document.getElementById('tts-top-p').value = config.tts.tts_top_p;
+                }
+                if (config.tts.tts_top_k != null) {
+                    document.getElementById('tts-top-k').value = config.tts.tts_top_k;
+                }
+                if (config.tts.tts_repetition_penalty != null) {
+                    document.getElementById('tts-repetition-penalty').value = config.tts.tts_repetition_penalty;
+                }
+                if (config.tts.tts_max_new_tokens != null) {
+                    document.getElementById('tts-max-new-tokens').value = config.tts.tts_max_new_tokens;
+                }
                 toggleTTSMode();
 
                 // Load merge/audio settings
@@ -1187,6 +1230,12 @@
             document.getElementById('presence-penalty').value = 0;
             document.getElementById('banned-tokens').value = '';
             document.getElementById('merge-narrators').checked = false;
+            // Reset TTS generation sampling parameters
+            document.getElementById('tts-temperature').value = 1.0;
+            document.getElementById('tts-top-p').value = 0.95;
+            document.getElementById('tts-top-k').value = 50;
+            document.getElementById('tts-repetition-penalty').value = 1.0;
+            document.getElementById('tts-max-new-tokens').value = 2048;
             // Reset merge/audio settings
             document.getElementById('pause-between-speakers').value = 500;
             document.getElementById('same-speaker-pause').value = 250;
@@ -1239,7 +1288,12 @@
                     sub_batch_enabled: document.getElementById('sub-batch-enabled').checked,
                     sub_batch_min_size: parseInt(document.getElementById('sub-batch-min-size').value) || 4,
                     sub_batch_ratio: parseFloat(document.getElementById('sub-batch-ratio').value) || 5,
-                    sub_batch_max_items: parseInt(document.getElementById('sub-batch-max-items').value) || 0
+                    sub_batch_max_items: parseInt(document.getElementById('sub-batch-max-items').value) || 0,
+                    tts_temperature: parseFloat(document.getElementById('tts-temperature').value),
+                    tts_top_p: parseFloat(document.getElementById('tts-top-p').value),
+                    tts_top_k: parseInt(document.getElementById('tts-top-k').value),
+                    tts_repetition_penalty: parseFloat(document.getElementById('tts-repetition-penalty').value),
+                    tts_max_new_tokens: parseInt(document.getElementById('tts-max-new-tokens').value) || 2048
                 },
                 prompts: {
                     system_prompt: document.getElementById('system-prompt').value,

@@ -94,6 +94,13 @@ class TTSEngine:
         # Language setting (passed to Qwen3-TTS)
         self._language = tts_config.get("language", "English")
 
+        # TTS generation sampling parameters
+        self._tts_temperature = float(tts_config.get("tts_temperature", 1.0))
+        self._tts_top_p = float(tts_config.get("tts_top_p", 0.95))
+        self._tts_top_k = int(tts_config.get("tts_top_k", 50))
+        self._tts_repetition_penalty = float(tts_config.get("tts_repetition_penalty", 1.0))
+        self._tts_max_new_tokens = int(tts_config.get("tts_max_new_tokens", 2048))
+
         # Sub-batching config
         self._sub_batch_enabled = tts_config.get("sub_batch_enabled", True)
         self._sub_batch_min_size = max(1, tts_config.get("sub_batch_min_size", 4))
@@ -118,6 +125,24 @@ class TTSEngine:
     @property
     def mode(self):
         return self._mode
+
+    def _gen_kwargs(self):
+        """Return a dict of generation kwargs for Qwen3-TTS model calls."""
+        kwargs = {
+            "non_streaming_mode": True,
+            "max_new_tokens": self._tts_max_new_tokens,
+        }
+        # Only pass sampling params if they differ from model defaults
+        # to avoid interfering with models that don't accept them
+        if self._tts_temperature != 1.0:
+            kwargs["temperature"] = self._tts_temperature
+        if self._tts_top_p != 0.95:
+            kwargs["top_p"] = self._tts_top_p
+        if self._tts_top_k != 50:
+            kwargs["top_k"] = self._tts_top_k
+        if self._tts_repetition_penalty != 1.0:
+            kwargs["repetition_penalty"] = self._tts_repetition_penalty
+        return kwargs
 
     @staticmethod
     def _concat_audio(wav):
@@ -157,7 +182,7 @@ class TTSEngine:
 
     def _estimate_max_batch_size(self, model, clone_prompt_tokens=0,
                                 ref_text_chars=0, max_text_chars=0,
-                                max_new_tokens=2048):
+                                max_new_tokens=None):
         """Estimate how many sequences fit in free VRAM based on KV cache math.
 
         Uses the talker's architecture (num_layers, num_kv_heads, head_dim) to
@@ -167,6 +192,8 @@ class TTSEngine:
         Returns max batch size (>= 1).  Falls back to a large default on CPU
         or if the model config is inaccessible.
         """
+        if max_new_tokens is None:
+            max_new_tokens = self._tts_max_new_tokens
         import torch
         if not torch.cuda.is_available():
             return 9999
@@ -649,8 +676,7 @@ class TTSEngine:
             text=sample_text,
             instruct=description,
             language=lang,
-            non_streaming_mode=True,
-            max_new_tokens=2048,
+            **self._gen_kwargs(),
         )
         gen_time = time.time() - t_start
 
@@ -790,8 +816,7 @@ class TTSEngine:
             wavs, sr = model.generate_voice_clone(
                 text=text,
                 voice_clone_prompt=prompt,
-                non_streaming_mode=True,
-                max_new_tokens=2048,
+                **self._gen_kwargs(),
                 **gen_extra,
             )
             gen_time = time.time() - t_start
@@ -979,8 +1004,7 @@ class TTSEngine:
                 language=self._language,
                 speaker=voice,
                 instruct=instruct,
-                non_streaming_mode=True,
-                max_new_tokens=2048,
+                **self._gen_kwargs(),
             )
             gen_time = time.time() - t_start
 
@@ -1028,8 +1052,7 @@ class TTSEngine:
             wavs, sr = model.generate_voice_clone(
                 text=text,
                 voice_clone_prompt=prompt,
-                non_streaming_mode=True,
-                max_new_tokens=2048,
+                **self._gen_kwargs(),
             )
             gen_time = time.time() - t_start
 
@@ -1143,8 +1166,7 @@ class TTSEngine:
                     language=[self._language] * len(sb_texts),
                     speaker=sb_speakers,
                     instruct=sb_instructs,
-                    non_streaming_mode=True,
-                    max_new_tokens=2048,
+                    **self._gen_kwargs(),
                 )
                 gen_time = time.time() - t_start
 
@@ -1256,8 +1278,7 @@ class TTSEngine:
                     wavs_list, sr = model.generate_voice_clone(
                         text=sb_texts,
                         voice_clone_prompt=prompt,
-                        non_streaming_mode=True,
-                        max_new_tokens=2048,
+                        **self._gen_kwargs(),
                     )
                     gen_time = time.time() - t_start
 
@@ -1432,8 +1453,7 @@ class TTSEngine:
                     wavs_list, sr = model.generate_voice_clone(
                         text=sb_texts,
                         voice_clone_prompt=prompt,
-                        non_streaming_mode=True,
-                        max_new_tokens=2048,
+                        **self._gen_kwargs(),
                         **gen_extra,
                     )
                     gen_time = time.time() - t_start
