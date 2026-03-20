@@ -409,6 +409,9 @@ class ProjectManager:
         a LOF file for auto-import, and a labels file for chunk annotations."""
         chunks = self.load_chunks()
 
+        # Target sample rate for consistent output
+        TARGET_SAMPLE_RATE = 24000
+
         # Phase 1 — Compute timeline (matching merge_audio pause logic exactly)
         timeline = []  # list of (chunk, segment, abs_start_ms)
         prev_speaker = None
@@ -423,6 +426,16 @@ class ProjectManager:
                 continue
             try:
                 segment = AudioSegment.from_file(full_path)
+
+                # Normalize sample rate
+                if segment.frame_rate != TARGET_SAMPLE_RATE:
+                    segment = segment.set_frame_rate(TARGET_SAMPLE_RATE)
+
+                # Normalize volume to -20 dBFS
+                target_dBFS = -20.0
+                change_in_dBFS = target_dBFS - segment.dBFS
+                segment = segment.apply_gain(change_in_dBFS)
+
             except Exception as e:
                 print(f"Error loading audio for Audacity export {path}: {e}")
                 continue
@@ -462,14 +475,14 @@ class ProjectManager:
                 # Insert silence gap from current track position to this chunk's start
                 gap = start_ms - track_cursor
                 if gap > 0:
-                    track += AudioSegment.silent(duration=gap)
+                    track += AudioSegment.silent(duration=gap, frame_rate=TARGET_SAMPLE_RATE)
                 track += segment
                 track_cursor = start_ms + len(segment)
 
             # Pad to total duration so all tracks are equal length
             remaining = total_duration_ms - track_cursor
             if remaining > 0:
-                track += AudioSegment.silent(duration=remaining)
+                track += AudioSegment.silent(duration=remaining, frame_rate=TARGET_SAMPLE_RATE)
 
             speaker_tracks[speaker] = track
 
