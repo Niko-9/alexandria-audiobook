@@ -324,8 +324,8 @@ class ProjectManager:
                     mp3_filename = f"{filename_base}.mp3"
                     mp3_filepath = os.path.join(self.voicelines_dir, mp3_filename)
 
-                    # This might fail if ffmpeg is missing or lacks MP3 encoder
-                    segment.export(mp3_filepath, format="mp3")
+                    # Export with high-quality MP3 settings
+                    segment.export(mp3_filepath, format="mp3", bitrate="192k", parameters=["-q:a", "0"])
 
                     # Validate: conda ffmpeg often lacks libmp3lame, producing
                     # a tiny (~428 byte) header-only file without raising an error
@@ -394,10 +394,13 @@ class ProjectManager:
         if not audio_segments:
             return False, "No audio segments found"
 
+        # Combine with high-quality processing (normalization, crossfades, etc.)
         final_audio = combine_audio_with_pauses(audio_segments, speakers)
         output_filename = "cloned_audiobook.mp3"
         output_path = os.path.join(self.root_dir, output_filename)
-        final_audio.export(output_path, format="mp3")
+
+        # Export with high-quality MP3 settings
+        final_audio.export(output_path, format="mp3", bitrate="192k", parameters=["-q:a", "0"])
 
         return True, output_filename
 
@@ -599,7 +602,8 @@ class ProjectManager:
                 cmd += ["-map", "1:v", "-c:v", "copy", "-disposition:v:0", "attached_pic"]
             cmd += [
                 "-c:a", "aac",
-                "-b:a", "128k",
+                "-b:a", "192k",  # Higher bitrate for better quality
+                "-ar", "24000",  # Match sample rate from combine_audio_with_pauses
                 "-movflags", "+faststart",
                 output_path
             ]
@@ -926,7 +930,7 @@ class ProjectManager:
 
                         mp3_filename = f"{filename_base}.mp3"
                         mp3_filepath = os.path.join(self.voicelines_dir, mp3_filename)
-                        segment.export(mp3_filepath, format="mp3")
+                        segment.export(mp3_filepath, format="mp3", bitrate="192k", parameters=["-q:a", "0"])
 
                         # Validate: conda ffmpeg often lacks libmp3lame, producing
                         # a tiny (~428 byte) header-only file without raising an error
