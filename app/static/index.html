@@ -1908,8 +1908,16 @@
                 formData.append('file', file);
                 const resp = await fetch('/api/chunks/import', { method: 'POST', body: formData });
                 if (!resp.ok) {
-                    const err = await resp.json();
-                    throw new Error(err.detail || resp.statusText);
+                    let errMsg = resp.statusText;
+                    try {
+                        const err = await resp.json();
+                        errMsg = typeof err.detail === 'string'
+                            ? err.detail
+                            : Array.isArray(err.detail)
+                                ? err.detail.map(e => e.msg || JSON.stringify(e)).join('; ')
+                                : JSON.stringify(err.detail);
+                    } catch (_) {}
+                    throw new Error(errMsg);
                 }
                 const result = await resp.json();
                 showToast(`Imported ${result.total} chunks`, 'success');
