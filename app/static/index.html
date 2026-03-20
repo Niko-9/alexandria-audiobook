@@ -198,6 +198,63 @@
                         </div>
 
                         <h5 class="mb-3 mt-4">
+                            <a class="text-decoration-none" data-bs-toggle="collapse" href="#mergeSettings" role="button" aria-expanded="false">
+                                <i class="fas fa-chevron-right me-2" id="merge-chevron"></i>Audio &amp; Merge Settings
+                            </a>
+                        </h5>
+                        <div class="collapse" id="mergeSettings">
+                            <div class="row mb-3">
+                                <div class="col-md-3">
+                                    <label class="form-label">Pause Between Speakers (ms)</label>
+                                    <input type="number" class="form-control" id="pause-between-speakers" value="500" min="0" step="50">
+                                    <div class="form-text">Silence inserted between different speakers</div>
+                                </div>
+                                <div class="col-md-3">
+                                    <label class="form-label">Same Speaker Pause (ms)</label>
+                                    <input type="number" class="form-control" id="same-speaker-pause" value="250" min="0" step="50">
+                                    <div class="form-text">Silence when the same speaker continues</div>
+                                </div>
+                                <div class="col-md-3">
+                                    <label class="form-label">Normalization (dBFS)</label>
+                                    <input type="number" class="form-control" id="normalization-db" value="-20" min="-40" max="0" step="0.5">
+                                    <div class="form-text">Target volume level (e.g. -20 dBFS)</div>
+                                </div>
+                                <div class="col-md-3">
+                                    <label class="form-label">Fade Duration (ms)</label>
+                                    <input type="number" class="form-control" id="fade-ms" value="5" min="0" max="100" step="1">
+                                    <div class="form-text">Fade in/out to eliminate clicks</div>
+                                </div>
+                            </div>
+                            <div class="row mb-3">
+                                <div class="col-md-3">
+                                    <label class="form-label">MP3 Bitrate</label>
+                                    <select class="form-select" id="mp3-bitrate">
+                                        <option value="128k">128k</option>
+                                        <option value="192k" selected>192k</option>
+                                        <option value="256k">256k</option>
+                                        <option value="320k">320k</option>
+                                    </select>
+                                    <div class="form-text">Bitrate for MP3 voiceline and merge export</div>
+                                </div>
+                                <div class="col-md-3">
+                                    <label class="form-label">M4B Bitrate</label>
+                                    <select class="form-select" id="m4b-bitrate">
+                                        <option value="128k">128k</option>
+                                        <option value="192k" selected>192k</option>
+                                        <option value="256k">256k</option>
+                                        <option value="320k">320k</option>
+                                    </select>
+                                    <div class="form-text">AAC bitrate for M4B audiobook export</div>
+                                </div>
+                                <div class="col-md-3">
+                                    <label class="form-label">Max Chunk Characters</label>
+                                    <input type="number" class="form-control" id="max-chunk-chars" value="500" min="100" max="2000" step="50">
+                                    <div class="form-text">Max text length per voice chunk when splitting script</div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <h5 class="mb-3 mt-4">
                             <a class="text-decoration-none" data-bs-toggle="collapse" href="#promptSettings" role="button" aria-expanded="false">
                                 <i class="fas fa-chevron-right me-2" id="prompt-chevron"></i>Prompt Settings (Advanced)
                             </a>
@@ -999,6 +1056,31 @@
                 }
                 toggleTTSMode();
 
+                // Load merge/audio settings
+                if (config.merge) {
+                    if (config.merge.pause_between_speakers != null) {
+                        document.getElementById('pause-between-speakers').value = config.merge.pause_between_speakers;
+                    }
+                    if (config.merge.same_speaker_pause != null) {
+                        document.getElementById('same-speaker-pause').value = config.merge.same_speaker_pause;
+                    }
+                    if (config.merge.normalization_db != null) {
+                        document.getElementById('normalization-db').value = config.merge.normalization_db;
+                    }
+                    if (config.merge.fade_ms != null) {
+                        document.getElementById('fade-ms').value = config.merge.fade_ms;
+                    }
+                    if (config.merge.mp3_bitrate) {
+                        document.getElementById('mp3-bitrate').value = config.merge.mp3_bitrate;
+                    }
+                    if (config.merge.m4b_bitrate) {
+                        document.getElementById('m4b-bitrate').value = config.merge.m4b_bitrate;
+                    }
+                    if (config.merge.max_chunk_chars != null) {
+                        document.getElementById('max-chunk-chars').value = config.merge.max_chunk_chars;
+                    }
+                }
+
                 // Load custom prompts if they exist and are non-empty
                 if (config.prompts) {
                     if (config.prompts.system_prompt) {
@@ -1094,9 +1176,23 @@
             document.getElementById('presence-penalty').value = 0;
             document.getElementById('banned-tokens').value = '';
             document.getElementById('merge-narrators').checked = false;
+            // Reset merge/audio settings
+            document.getElementById('pause-between-speakers').value = 500;
+            document.getElementById('same-speaker-pause').value = 250;
+            document.getElementById('normalization-db').value = -20;
+            document.getElementById('fade-ms').value = 5;
+            document.getElementById('mp3-bitrate').value = '192k';
+            document.getElementById('m4b-bitrate').value = '192k';
+            document.getElementById('max-chunk-chars').value = 500;
         };
 
         // Toggle chevron on collapse
+        document.getElementById('mergeSettings')?.addEventListener('show.bs.collapse', () => {
+            document.getElementById('merge-chevron').classList.replace('fa-chevron-right', 'fa-chevron-down');
+        });
+        document.getElementById('mergeSettings')?.addEventListener('hide.bs.collapse', () => {
+            document.getElementById('merge-chevron').classList.replace('fa-chevron-down', 'fa-chevron-right');
+        });
         document.getElementById('promptSettings')?.addEventListener('show.bs.collapse', () => {
             document.getElementById('prompt-chevron').classList.replace('fa-chevron-right', 'fa-chevron-down');
         });
@@ -1152,6 +1248,15 @@
                         ? document.getElementById('banned-tokens').value.split(',').map(t => t.trim()).filter(t => t)
                         : [],
                     merge_narrators: document.getElementById('merge-narrators').checked
+                },
+                merge: {
+                    pause_between_speakers: parseInt(document.getElementById('pause-between-speakers').value) || 500,
+                    same_speaker_pause: parseInt(document.getElementById('same-speaker-pause').value) || 250,
+                    normalization_db: parseFloat(document.getElementById('normalization-db').value) || -20,
+                    fade_ms: parseInt(document.getElementById('fade-ms').value) || 5,
+                    mp3_bitrate: document.getElementById('mp3-bitrate').value || '192k',
+                    m4b_bitrate: document.getElementById('m4b-bitrate').value || '192k',
+                    max_chunk_chars: parseInt(document.getElementById('max-chunk-chars').value) || 500
                 }
             };
             try {
