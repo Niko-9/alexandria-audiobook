@@ -637,6 +637,46 @@ async def restore_chunk(request: ChunkRestoreRequest):
         raise HTTPException(status_code=400, detail="Failed to restore chunk")
     return {"status": "ok", "total": len(chunks)}
 
+@app.get("/api/chunks/export")
+async def export_chunks():
+    """Download the current chunks as a JSON file."""
+    chunks = project_manager.load_chunks()
+    export_data = [
+        {"id": c.get("id", i), "speaker": c.get("speaker", ""), "text": c.get("text", ""), "instruct": c.get("instruct", "")}
+        for i, c in enumerate(chunks)
+    ]
+    content = json.dumps(export_data, ensure_ascii=False, indent=2)
+    return Response(
+        content=content,
+        media_type="application/json",
+        headers={"Content-Disposition": "attachment; filename=script.json"}
+    )
+
+@app.post("/api/chunks/import")
+async def import_chunks(file: UploadFile = File(...)):
+    """Replace current chunks from an uploaded JSON file."""
+    try:
+        raw = await file.read()
+        data = json.loads(raw)
+    except Exception:
+        raise HTTPException(status_code=400, detail="Invalid JSON file")
+    if not isinstance(data, list):
+        raise HTTPException(status_code=400, detail="JSON must be a list of chunks")
+    chunks = []
+    for i, item in enumerate(data):
+        if not isinstance(item, dict):
+            raise HTTPException(status_code=400, detail=f"Item {i} is not an object")
+        chunks.append({
+            "id": i,
+            "speaker": str(item.get("speaker", "NARRATOR")),
+            "text": str(item.get("text", "")),
+            "instruct": str(item.get("instruct", "")),
+            "status": "pending",
+            "audio_path": None,
+        })
+    project_manager.save_chunks(chunks)
+    return {"status": "ok", "total": len(chunks)}
+
 @app.post("/api/chunks/{index}")
 async def update_chunk(index: int, update: ChunkUpdate):
     data = update.model_dump(exclude_unset=True)
@@ -678,47 +718,6 @@ async def generate_chunk_endpoint(index: int, background_tasks: BackgroundTasks)
 
     background_tasks.add_task(task)
     return {"status": "started"}
-
-@app.get("/api/chunks/export")
-async def export_chunks():
-    """Download the current chunks as a JSON file."""
-    chunks = project_manager.load_chunks()
-    export_data = [
-        {"id": c.get("id", i), "speaker": c.get("speaker", ""), "text": c.get("text", ""), "instruct": c.get("instruct", "")}
-        for i, c in enumerate(chunks)
-    ]
-    import io
-    content = json.dumps(export_data, ensure_ascii=False, indent=2)
-    return Response(
-        content=content,
-        media_type="application/json",
-        headers={"Content-Disposition": "attachment; filename=script.json"}
-    )
-
-@app.post("/api/chunks/import")
-async def import_chunks(file: UploadFile = File(...)):
-    """Replace current chunks from an uploaded JSON file."""
-    try:
-        raw = await file.read()
-        data = json.loads(raw)
-    except Exception:
-        raise HTTPException(status_code=400, detail="Invalid JSON file")
-    if not isinstance(data, list):
-        raise HTTPException(status_code=400, detail="JSON must be a list of chunks")
-    chunks = []
-    for i, item in enumerate(data):
-        if not isinstance(item, dict):
-            raise HTTPException(status_code=400, detail=f"Item {i} is not an object")
-        chunks.append({
-            "id": i,
-            "speaker": str(item.get("speaker", "NARRATOR")),
-            "text": str(item.get("text", "")),
-            "instruct": str(item.get("instruct", "")),
-            "status": "pending",
-            "audio_path": None,
-        })
-    project_manager.save_chunks(chunks)
-    return {"status": "ok", "total": len(chunks)}
 
 @app.post("/api/merge")
 async def merge_audio_endpoint(background_tasks: BackgroundTasks):
