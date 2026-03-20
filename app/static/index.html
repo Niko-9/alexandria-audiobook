@@ -758,6 +758,9 @@
                             <td class="text-center align-top" style="min-width:100px;"><button class="btn btn-warning btn-sm w-100" id="btn-merge"><i class="fas fa-file-audio me-1"></i>Merge All</button></td>
                             <td class="align-middle text-muted px-1">|</td>
                             <td class="text-center align-top" style="min-width:100px;"><button class="btn btn-outline-danger btn-sm w-100" id="btn-clear-all" onclick="clearAllChunks()"><i class="fas fa-trash me-1"></i>Clear All</button></td>
+                            <td class="align-middle text-muted px-1">|</td>
+                            <td class="text-center align-top" style="min-width:110px;"><button class="btn btn-outline-secondary btn-sm w-100" onclick="exportChunksJSON()"><i class="fas fa-file-export me-1"></i>Export JSON</button></td>
+                            <td class="text-center align-top" style="min-width:110px;"><label class="btn btn-outline-secondary btn-sm w-100 mb-0" style="cursor:pointer;"><i class="fas fa-file-import me-1"></i>Import JSON<input type="file" accept=".json" style="display:none;" onchange="importChunksJSON(this)"></label></td>
                         </tr>
                         <tr>
                             <td class="text-center text-muted" style="font-size:0.7rem;">Preview generated audio</td>
@@ -770,6 +773,9 @@
                             <td class="text-center text-muted" style="font-size:0.7rem;">Combine all chunks into final audiobook</td>
                             <td></td>
                             <td class="text-center text-muted" style="font-size:0.7rem;">Remove all entries</td>
+                            <td></td>
+                            <td class="text-center text-muted" style="font-size:0.7rem;">Download script as JSON</td>
+                            <td class="text-center text-muted" style="font-size:0.7rem;">Load script from JSON file</td>
                         </tr>
                      </table>
                 </div>
@@ -1878,6 +1884,38 @@
                 await loadChunks(true);
             } catch (e) {
                 showToast('Failed to clear entries: ' + e.message, 'error');
+            }
+        };
+
+        window.exportChunksJSON = async () => {
+            try {
+                const a = document.createElement('a');
+                a.href = '/api/chunks/export';
+                a.download = 'script.json';
+                a.click();
+            } catch (e) {
+                showToast('Export failed: ' + e.message, 'error');
+            }
+        };
+
+        window.importChunksJSON = async (input) => {
+            const file = input.files[0];
+            if (!file) return;
+            input.value = '';
+            if (!confirm(`Import "${file.name}"? This will replace all current chunks (audio files are kept but unlinked).`)) return;
+            try {
+                const formData = new FormData();
+                formData.append('file', file);
+                const resp = await fetch('/api/chunks/import', { method: 'POST', body: formData });
+                if (!resp.ok) {
+                    const err = await resp.json();
+                    throw new Error(err.detail || resp.statusText);
+                }
+                const result = await resp.json();
+                showToast(`Imported ${result.total} chunks`, 'success');
+                await loadChunks(true);
+            } catch (e) {
+                showToast('Import failed: ' + e.message, 'error');
             }
         };
 
