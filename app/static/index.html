@@ -368,6 +368,9 @@
                             <i class="fas fa-check-double me-2"></i>Review Script (Optional)
                         </button>
                         <small class="text-muted">Runs a second LLM pass to fix speaker misattributions or formatting issues. Only needed if the generated script has problems.</small>
+                        <button class="btn btn-danger btn-lg" id="btn-cancel-script" style="display:none;" onclick="cancelScript()">
+                            <i class="fas fa-stop me-2"></i>Cancel Generation
+                        </button>
                     </div>
                 </div>
             </div>
@@ -1302,7 +1305,8 @@
 
             try {
                 await API.post('/api/generate_script', {});
-                pollLogs('script', 'script-logs');
+                setScriptGenerating(true);
+                pollLogs('script', 'script-logs', () => setScriptGenerating(false));
             } catch (e) {
                 const detail = e.message || 'Unknown error';
                 if (detail.includes('No input file')) {
@@ -1316,7 +1320,8 @@
         document.getElementById('btn-review-script').addEventListener('click', async () => {
             try {
                 await API.post('/api/review_script', {});
-                pollLogs('review', 'script-logs');
+                setScriptGenerating(true);
+                pollLogs('review', 'script-logs', () => setScriptGenerating(false));
             } catch (e) {
                 showToast("Failed to start review: " + e.message, 'error');
             }
@@ -2404,7 +2409,7 @@
         };
 
         // --- Polling Logic ---
-        async function pollLogs(taskName, elementId) {
+        async function pollLogs(taskName, elementId, onDone) {
             const el = document.getElementById(elementId);
             const interval = setInterval(async () => {
                 try {
@@ -2414,6 +2419,7 @@
 
                     if (!status.running) {
                         clearInterval(interval);
+                        if (onDone) onDone(status);
                         if (taskName === 'audio' && status.logs.some(l => l.includes("complete"))) {
                             // Load audio player
                             const audio = document.getElementById('main-audio');
@@ -2435,9 +2441,24 @@
                 } catch (e) {
                     console.error("Poll error", e);
                     clearInterval(interval);
+                    if (onDone) onDone(null);
                 }
             }, 1000);
         }
+
+        // --- Script generation cancel helpers ---
+        function setScriptGenerating(isGenerating) {
+            document.getElementById('btn-gen-script').disabled = isGenerating;
+            document.getElementById('btn-review-script').disabled = isGenerating;
+            document.getElementById('btn-cancel-script').style.display = isGenerating ? 'block' : 'none';
+        }
+
+        window.cancelScript = async () => {
+            try {
+                await API.post('/api/cancel_script', {});
+            } catch (e) { console.error('Cancel script error:', e); }
+            setScriptGenerating(false);
+        };
 
         // ── Saved Scripts ──────────────────────────────────────
 

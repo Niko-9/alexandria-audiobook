@@ -251,12 +251,12 @@ class DatasetBuilderUpdateRowsRequest(BaseModel):
 
 # Global state for process tracking
 process_state = {
-    "script": {"running": False, "logs": []},
+    "script": {"running": False, "logs": [], "cancel": False, "process": None},
     "voices": {"running": False, "logs": []},
     "audio": {"running": False, "logs": [], "cancel": False},
     "audacity_export": {"running": False, "logs": []},
     "m4b_export": {"running": False, "logs": []},
-    "review": {"running": False, "logs": []},
+    "review": {"running": False, "logs": [], "cancel": False, "process": None},
     "lora_training": {"running": False, "logs": []},
     "dataset_gen": {"running": False, "logs": []},
     "dataset_builder": {"running": False, "logs": [], "cancel": False}
@@ -267,6 +267,10 @@ def run_process(command: List[str], task_name: str):
     global process_state
     process_state[task_name]["running"] = True
     process_state[task_name]["logs"] = []
+    if "cancel" in process_state[task_name]:
+        process_state[task_name]["cancel"] = False
+    if "process" in process_state[task_name]:
+        process_state[task_name]["process"] = None
 
     logger.info(f"Starting task {task_name}: {' '.join(command)}")
 
@@ -283,7 +287,21 @@ def run_process(command: List[str], task_name: str):
             env=env,
         )
 
+        if "process" in process_state[task_name]:
+            process_state[task_name]["process"] = process
+
         for line in process.stdout:
+            # Check cancel flag between each line
+            if process_state[task_name].get("cancel"):
+                process_state[task_name]["logs"].append(f"[CANCEL] Terminating {task_name}...")
+                try:
+                    process.terminate()
+                    process.wait(timeout=5)
+                except Exception:
+                    process.kill()
+                process_state[task_name]["logs"].append(f"[CANCEL] {task_name} cancelled.")
+                return
+
             log_line = line.strip()
             if log_line:
                 process_state[task_name]["logs"].append(log_line)
@@ -304,6 +322,10 @@ def run_process(command: List[str], task_name: str):
         process_state[task_name]["logs"].append(f"Error: {str(e)}")
     finally:
         process_state[task_name]["running"] = False
+        if "process" in process_state[task_name]:
+            process_state[task_name]["process"] = None
+        if "cancel" in process_state[task_name]:
+            process_state[task_name]["cancel"] = False
 
 # Endpoints
 
@@ -485,6 +507,26 @@ async def review_script(background_tasks: BackgroundTasks):
 
     background_tasks.add_task(run_process, [sys.executable, "-u", "review_script.py"], "review")
     return {"status": "started"}
+
+@app.post("/api/cancel_script")
+async def cancel_script():
+    """Cancel any running script generation or review."""
+    cancelled = []
+    for task in ("script", "review"):
+        if process_state[task]["running"]:
+            process_state[task]["cancel"] = True
+            # Also terminate the subprocess immediately if handle is available
+            proc = process_state[task].get("process")
+            if proc:
+                try:
+                    proc.terminate()
+                except Exception:
+                    pass
+            process_state[task]["logs"].append("[CANCEL] Cancellation requested")
+            cancelled.append(task)
+    if cancelled:
+        return {"status": "cancelling", "tasks": cancelled}
+    return {"status": "not_running"}
 
 @app.get("/api/annotated_script")
 async def get_annotated_script():
