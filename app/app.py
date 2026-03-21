@@ -39,6 +39,7 @@ SCRIPT_PATH = os.path.join(ROOT_DIR, "annotated_script.json")
 AUDIOBOOK_PATH = os.path.join(ROOT_DIR, "cloned_audiobook.mp3")
 M4B_PATH = os.path.join(ROOT_DIR, "audiobook.m4b")
 UPLOADS_DIR = os.path.join(BASE_DIR, "uploads")
+SAVED_MERGES_DIR = os.path.join(ROOT_DIR, "saved_merges")
 SCRIPTS_DIR = os.path.join(ROOT_DIR, "scripts")
 CHUNKS_PATH = os.path.join(ROOT_DIR, "chunks.json")
 DESIGNED_VOICES_DIR = os.path.join(ROOT_DIR, "designed_voices")
@@ -733,6 +734,7 @@ async def merge_audio_endpoint(background_tasks: BackgroundTasks):
     # Or we can link it to process_state["audio"]
 
     def task():
+        import datetime
         process_state["audio"]["running"] = True
         process_state["audio"]["logs"] = ["Starting merge..."]
         try:
@@ -740,6 +742,20 @@ async def merge_audio_endpoint(background_tasks: BackgroundTasks):
             success, msg = project_manager.merge_audio(merge_config=mc)
             if success:
                 process_state["audio"]["logs"].append(f"Merge complete: {msg}")
+                # Save snapshot: audio + config
+                try:
+                    merge_id = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+                    save_dir = os.path.join(SAVED_MERGES_DIR, merge_id)
+                    os.makedirs(save_dir, exist_ok=True)
+                    shutil.copy2(AUDIOBOOK_PATH, os.path.join(save_dir, "audio.mp3"))
+                    config_data = {}
+                    if os.path.exists(CONFIG_PATH):
+                        with open(CONFIG_PATH, "r", encoding="utf-8") as f:
+                            config_data = json.load(f)
+                    with open(os.path.join(save_dir, "settings.json"), "w", encoding="utf-8") as f:
+                        json.dump(config_data, f, indent=2, ensure_ascii=False)
+                except Exception as snap_err:
+                    process_state["audio"]["logs"].append(f"Snapshot save warning: {snap_err}")
             else:
                 process_state["audio"]["logs"].append(f"Merge failed: {msg}")
         except Exception as e:
@@ -779,6 +795,50 @@ async def get_audacity_export():
     if not os.path.exists(zip_path):
         raise HTTPException(status_code=404, detail="Audacity export not found. Generate it first.")
     return FileResponse(zip_path, filename="audacity_export.zip", media_type="application/zip")
+
+@app.get("/api/saved_merges")
+async def list_saved_merges():
+    if not os.path.exists(SAVED_MERGES_DIR):
+        return []
+    entries = []
+    for name in sorted(os.listdir(SAVED_MERGES_DIR), reverse=True):
+        d = os.path.join(SAVED_MERGES_DIR, name)
+        if not os.path.isdir(d):
+            continue
+        audio_path = os.path.join(d, "audio.mp3")
+        if not os.path.exists(audio_path):
+            continue
+        entries.append({
+            "id": name,
+            "size_bytes": os.path.getsize(audio_path),
+            "has_settings": os.path.exists(os.path.join(d, "settings.json")),
+        })
+    return entries
+
+@app.get("/api/saved_merges/{merge_id}/audio")
+async def get_saved_merge_audio(merge_id: str):
+    if ".." in merge_id or "/" in merge_id or "\\" in merge_id:
+        raise HTTPException(status_code=400, detail="Invalid merge ID")
+    audio_path = os.path.join(SAVED_MERGES_DIR, merge_id, "audio.mp3")
+    if not os.path.exists(audio_path):
+        raise HTTPException(status_code=404, detail="Saved merge not found")
+    return FileResponse(audio_path, media_type="audio/mpeg", filename=f"audiobook_{merge_id}.mp3")
+
+@app.get("/api/saved_merges/{merge_id}/settings")
+async def get_saved_merge_settings(merge_id: str):
+    if ".." in merge_id or "/" in merge_id or "\\" in merge_id:
+        raise HTTPException(status_code=400, detail="Invalid merge ID")
+    settings_path = os.path.join(SAVED_MERGES_DIR, merge_id, "settings.json")
+    if not os.path.exists(settings_path):
+        raise HTTPException(status_code=404, detail="Settings not found")
+    with open(settings_path, "r", encoding="utf-8") as f:
+        return json.load(f)
+
+@app.delete("/api/saved_merges")
+async def clear_saved_merges():
+    if os.path.exists(SAVED_MERGES_DIR):
+        shutil.rmtree(SAVED_MERGES_DIR)
+    return {"status": "cleared"}
 
 class M4bExportRequest(BaseModel):
     per_chunk_chapters: bool = False
