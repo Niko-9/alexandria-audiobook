@@ -2502,21 +2502,42 @@
                     const h = id.slice(9,11), mi = id.slice(11,13), s = id.slice(13,15);
                     const label = `${y}-${mo}-${d} ${h}:${mi}:${s}`;
                     const mb = (e.size_bytes / 1048576).toFixed(1);
+                    const desc = (e.description || '').replace(/"/g, '&quot;');
                     const settingsBtn = e.has_settings
-                        ? `<button class="btn btn-sm btn-outline-primary ms-2" onclick="loadMergeSettings('${id}')"><i class="fas fa-upload me-1"></i>Load Settings</button>`
+                        ? `<button class="btn btn-sm btn-outline-primary" onclick="loadMergeSettings('${id}')"><i class="fas fa-upload me-1"></i>Load Settings</button>`
                         : '';
-                    return `<div class="d-flex align-items-center gap-2 py-2 border-bottom">
-                        <div class="flex-grow-1">
+                    return `<div class="py-2 border-bottom px-3">
+                        <div class="d-flex align-items-center gap-2 mb-1">
                             <div class="fw-semibold">${label}</div>
-                            <div class="text-muted" style="font-size:0.8em;">${mb} MB</div>
+                            <span class="text-muted" style="font-size:0.8em;">${mb} MB</span>
+                            <div class="ms-auto d-flex align-items-center gap-2">
+                                <audio controls style="height:32px;max-width:240px;" src="/api/saved_merges/${id}/audio"></audio>
+                                <a class="btn btn-sm btn-outline-secondary" href="/api/saved_merges/${id}/audio" download="audiobook_${id}.mp3"><i class="fas fa-download"></i></a>
+                                ${settingsBtn}
+                            </div>
                         </div>
-                        <audio controls style="height:32px;max-width:260px;" src="/api/saved_merges/${id}/audio"></audio>
-                        <a class="btn btn-sm btn-outline-secondary" href="/api/saved_merges/${id}/audio" download="audiobook_${id}.mp3"><i class="fas fa-download"></i></a>
-                        ${settingsBtn}
+                        <input type="text" class="form-control form-control-sm"
+                            placeholder="Add a note about this merge…"
+                            value="${desc}"
+                            onblur="saveMergeDescription('${id}', this.value)"
+                            onkeydown="if(event.key==='Enter'){this.blur();}">
                     </div>`;
                 }).join('');
             } catch (e) {
                 container.innerHTML = `<span class="text-danger">Failed to load: ${e.message}</span>`;
+            }
+        }
+
+        async function saveMergeDescription(mergeId, description) {
+            try {
+                const res = await fetch(`/api/saved_merges/${mergeId}/description`, {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ description }),
+                });
+                if (!res.ok) throw new Error(await res.text());
+            } catch (e) {
+                showToast('Failed to save note: ' + e.message, 'error');
             }
         }
 
