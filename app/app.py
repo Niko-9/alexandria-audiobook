@@ -808,10 +808,16 @@ async def list_saved_merges():
         audio_path = os.path.join(d, "audio.mp3")
         if not os.path.exists(audio_path):
             continue
+        desc = ""
+        desc_path = os.path.join(d, "description.txt")
+        if os.path.exists(desc_path):
+            with open(desc_path, "r", encoding="utf-8") as f:
+                desc = f.read().strip()
         entries.append({
             "id": name,
             "size_bytes": os.path.getsize(audio_path),
             "has_settings": os.path.exists(os.path.join(d, "settings.json")),
+            "description": desc,
         })
     return entries
 
@@ -833,6 +839,20 @@ async def get_saved_merge_settings(merge_id: str):
         raise HTTPException(status_code=404, detail="Settings not found")
     with open(settings_path, "r", encoding="utf-8") as f:
         return json.load(f)
+
+class MergeDescriptionRequest(BaseModel):
+    description: str = ""
+
+@app.put("/api/saved_merges/{merge_id}/description")
+async def set_saved_merge_description(merge_id: str, req: MergeDescriptionRequest):
+    if ".." in merge_id or "/" in merge_id or "\\" in merge_id:
+        raise HTTPException(status_code=400, detail="Invalid merge ID")
+    d = os.path.join(SAVED_MERGES_DIR, merge_id)
+    if not os.path.isdir(d):
+        raise HTTPException(status_code=404, detail="Saved merge not found")
+    with open(os.path.join(d, "description.txt"), "w", encoding="utf-8") as f:
+        f.write(req.description)
+    return {"status": "saved"}
 
 @app.delete("/api/saved_merges")
 async def clear_saved_merges():
